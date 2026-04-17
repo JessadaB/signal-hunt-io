@@ -7,60 +7,78 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.use(express.static(__dirname));
 
 let players = {};
 let pings = [];
 
-// สร้างอาหารทิ้งไว้ 50 จุด
+// สร้างอาหาร 50 จุด
 for(let i=0; i<50; i++) {
-    pings.push({ id: i, x: Math.random() * 1500, y: Math.random() * 1000 });
+    pings.push({ id: i, x: Math.random() * 2000, y: Math.random() * 2000 });
 }
 
 io.on('connection', (socket) => {
-    console.log('New connection:', socket.id);
-
-    // สร้างตัวละครใหม่
-    players[socket.id] = {
-        x: 500,
-        y: 500,
-        r: 15,
-        score: 0,
-        color: `hsl(${Math.random() * 360}, 100%, 50%)`
-    };
+    // รับข้อมูลเริ่มต้น (ชื่อ และ สี)
+    socket.on('joinGame', (data) => {
+        players[socket.id] = {
+            id: socket.id,
+            name: data.name || "Unknown",
+            x: Math.random() * 1000,
+            y: Math.random() * 1000,
+            r: 20,
+            score: 0,
+            color: data.color || "#00ff41"
+        };
+    });
 
     socket.on('playerMove', (data) => {
         if (players[socket.id]) {
-            // ค่อยๆ ขยับตาม Mouse (Smooth interpolation)
-            players[socket.id].x += (data.x - players[socket.id].x) * 0.1;
-            players[socket.id].y += (data.y - players[socket.id].y) * 0.1;
+            players[socket.id].x = data.x;
+            players[socket.id].y = data.y;
 
-            // ตรวจสอบการกินอาหาร (Pings)
+            // 1. เช็กกินอาหาร
             pings.forEach((p, index) => {
                 let dist = Math.hypot(players[socket.id].x - p.x, players[socket.id].y - p.y);
                 if (dist < players[socket.id].r) {
-                    players[socket.id].score += 1;
-                    players[socket.id].r += 0.2;
-                    // ย้ายที่อาหาร
-                    pings[index] = { id: index, x: Math.random() * 1500, y: Math.random() * 1000 };
+                    players[socket.id].score += 10;
+                    players[socket.id].r += 0.5;
+                    pings[index] = { id: index, x: Math.random() * 2000, y: Math.random() * 2000 };
                 }
             });
+
+            // 2. Death Mechanic: เช็กการชนกันเอง
+            for (let targetId in players) {
+                if (targetId === socket.id) continue;
+                let target = players[targetId];
+                let dist = Math.hypot(players[socket.id].x - target.x, players[socket.id].y - target.y);
+
+                // ถ้าชนกัน
+                if (dist < players[socket.id].r + target.r) {
+                    // ใครใหญ่กว่าคนนั้นรอด
+                    if (players[socket.id].r > target.r * 1.1) { // ใหญ่กว่า 10% ถึงจะกินได้
+                        players[socket.id].score += target.score / 2;
+                        players[socket.id].r += target.r * 0.2;
+                        io.to(targetId).emit('gameOver'); // ส่งสัญญาณบอกผู้ตาย
+                        delete players[targetId];
+                    }
+                }
+            }
         }
     });
 
-    socket.on('disconnect', () => {
-        delete players[socket.id];
-    });
+    socket.on('disconnect', () => { delete players[socket.id]; });
 });
 
-// ส่งสถานะเกมให้ทุกคนทุกๆ 15ms (60 FPS)
+// ส่งข้อมูล Game State และ Leaderboard
 setInterval(() => {
-    io.emit('updateGameState', { players, pings });
+    // จัดอันดับ Top 5
+    let leaderboard = Object.values(players)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(p => ({ name: p.name, score: Math.floor(p.score) }));
+
+    io.emit('updateGameState', { players, pings, leaderboard });
 }, 15);
 
-const PORT = process.env.PORT || 3000; // ให้ใช้ Port ที่ Cloud กำหนดมา หรือถ้าไม่มีค่อยใช้ 3000
-server.listen(PORT, () => {
-    console.log('Server is running on port ' + PORT);
-});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

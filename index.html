@@ -2,24 +2,44 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Signal Hunt .io - Multiplayer</title>
+    <title>Signal Hunt .io - Pro</title>
     <style>
-        body { margin: 0; background: #000; color: #00ff41; font-family: sans-serif; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        canvas { border: 2px solid #00ff41; background: #050505; display: none; box-shadow: 0 0 20px #00ff41; cursor: none; }
-        #menu { text-align: center; border: 2px solid #00ff41; padding: 40px; background: #000; box-shadow: 0 0 30px #00ff41; z-index: 10; }
-        button { background: #00ff41; color: #000; border: none; padding: 15px 30px; font-size: 20px; cursor: pointer; font-weight: bold; margin-top: 20px; transition: 0.3s; }
-        button:hover { background: #fff; transform: scale(1.1); }
-        .stat { position: absolute; top: 10px; left: 10px; color: #00ff41; font-size: 20px; display: none; pointer-events: none; z-index: 5; }
+        body { margin: 0; background: #000; color: #00ff41; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        #gameCanvas { display: none; background: #050505; cursor: none; }
+        
+        /* Menu Style */
+        #menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; border: 2px solid #00ff41; padding: 40px; background: rgba(0,0,0,0.9); box-shadow: 0 0 30px #00ff41; width: 300px; }
+        input, select { width: 100%; padding: 10px; margin: 10px 0; background: #111; border: 1px solid #00ff41; color: #fff; box-sizing: border-box; }
+        button { width: 100%; background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; font-size: 18px; }
+        
+        /* Leaderboard Style */
+        #leaderboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.7); border: 1px solid #00ff41; padding: 15px; width: 200px; display: none; pointer-events: none; }
+        #leaderboard h3 { margin: 0 0 10px 0; font-size: 16px; border-bottom: 1px solid #00ff41; }
+        .lb-item { display: flex; justify-content: space-between; font-size: 14px; margin: 5px 0; }
+        
+        #stat { position: absolute; top: 20px; left: 20px; display: none; }
     </style>
 </head>
 <body>
 
-<div id="stat" class="stat">Bandwidth: 0 KB | Online: 0</div>
-
 <div id="menu">
-    <h1 style="letter-spacing: 5px;">SIGNAL HUNT .io</h1>
-    <p>เชื่อมต่อระบบเพื่อแย่งชิงสัญญาณกับคนอื่นๆ</p>
-    <button onclick="startGame()">CONNECT TO SERVER</button>
+    <h1>SIGNAL HUNT</h1>
+    <input type="text" id="playerName" placeholder="Enter Name..." maxlength="10">
+    <label>Choose Skin Color:</label>
+    <select id="playerColor">
+        <option value="#00ff41">Cyber Green</option>
+        <option value="#ff0044">Glitch Red</option>
+        <option value="#00ccff">Data Blue</option>
+        <option value="#ffff00">Warning Yellow</option>
+    </select>
+    <button onclick="join()">START MISSION</button>
+</div>
+
+<div id="stat">Bandwidth: <span id="myScore">0</span> KB</div>
+
+<div id="leaderboard">
+    <h3>TOP PLAYERS</h3>
+    <div id="lb-list"></div>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -30,92 +50,96 @@ const socket = io();
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const menu = document.getElementById('menu');
-const stat = document.getElementById('stat');
 
-let myId = null;
-let allPlayers = {};
-let pings = [];
-let mouse = { x: 0, y: 0 };
 let isRunning = false;
+let players = {};
+let pings = [];
+let myPos = { x: 0, y: 0 };
 
-// รับ ID ของตัวเองจาก Server
-socket.on('connect', () => { myId = socket.id; });
-
-function startGame() {
+function join() {
+    const name = document.getElementById('playerName').value;
+    const color = document.getElementById('playerColor').value;
+    
+    socket.emit('joinGame', { name, color });
+    
     menu.style.display = 'none';
     canvas.style.display = 'block';
-    stat.style.display = 'block';
+    document.getElementById('leaderboard').style.display = 'block';
+    document.getElementById('stat').style.display = 'block';
+    
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    myPos = { x: canvas.width/2, y: canvas.height/2 };
     isRunning = true;
     loop();
 }
 
 window.addEventListener('mousemove', (e) => {
-    mouse.x = e.clientX;
-    mouse.y = e.clientY;
-    // ส่งตำแหน่งให้ Server ตลอดเวลา
     if(isRunning) {
-        socket.emit('playerMove', { x: mouse.x, y: mouse.y });
+        myPos.x = e.clientX;
+        myPos.y = e.clientY;
+        socket.emit('playerMove', myPos);
     }
 });
 
-// อัปเดตข้อมูลผู้เล่นและอาหารจาก Server
 socket.on('updateGameState', (data) => {
-    allPlayers = data.players;
+    players = data.players;
     pings = data.pings;
+    updateLeaderboard(data.leaderboard);
     
-    // อัปเดต UI ของตัวเอง
-    if (allPlayers[socket.id]) {
-        stat.innerHTML = `Bandwidth: ${Math.floor(allPlayers[socket.id].score)} KB | Online: ${Object.keys(allPlayers).length}`;
+    if(players[socket.id]) {
+        document.getElementById('myScore').innerText = Math.floor(players[socket.id].score);
     }
 });
+
+socket.on('gameOver', () => {
+    isRunning = false;
+    alert("SYSTEM TERMINATED: คุณถูกผู้เล่นที่ใหญ่กว่ากลืนกิน!");
+    location.reload();
+});
+
+function updateLeaderboard(list) {
+    const container = document.getElementById('lb-list');
+    container.innerHTML = list.map((p, i) => 
+        `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${p.score}</span></div>`
+    ).join('');
+}
 
 function loop() {
     if(!isRunning) return;
 
-    // ล้างจอแบบทิ้งหาง (Motion Blur)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'; 
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 1. วาดอาหาร (Pings) ที่ได้รับจาก Server
-    ctx.fillStyle = 'white';
-    pings.forEach((p) => {
+    // วาดอาหาร
+    ctx.fillStyle = '#fff';
+    pings.forEach(p => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
         ctx.fill();
     });
 
-    // 2. วาดผู้เล่นทุกคนใน Server
-    for (let id in allPlayers) {
-        let p = allPlayers[id];
-        
-        ctx.shadowBlur = id === socket.id ? 20 : 5; // ตัวเราเองจะเรืองแสงกว่าคนอื่น
-        ctx.shadowColor = p.color;
+    // วาดผู้เล่น
+    for(let id in players) {
+        let p = players[id];
         ctx.fillStyle = p.color;
+        ctx.shadowBlur = id === socket.id ? 20 : 5;
+        ctx.shadowColor = p.color;
         
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // วาดชื่อ ID สั้นๆ บนหัวผู้เล่นคนอื่น
-        if (id !== socket.id) {
-            ctx.fillStyle = 'white';
-            ctx.font = '12px sans-serif';
-            ctx.fillText("User_" + id.substring(0, 4), p.x - 20, p.y - (p.r + 10));
-        }
+        // วาดชื่อ
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText(p.name, p.x, p.y - (p.r + 10));
     }
 
     requestAnimationFrame(loop);
 }
-
-window.addEventListener('resize', () => {
-    if(isRunning) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-});
 </script>
 </body>
 </html>
