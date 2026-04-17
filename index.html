@@ -1,38 +1,44 @@
 <!DOCTYPE html>
-<html>
+<html lang="th">
 <head>
     <meta charset="UTF-8">
-    <title>Signal Hunt .io - Ultimate</title>
+    <title>Signal Hunt .io - IT Edition</title>
     <style>
-        body { margin: 0; background: #000; color: #00ff41; font-family: sans-serif; overflow: hidden; }
-        canvas { display: none; background: #050505; cursor: none; }
+        body { margin: 0; background: #000; color: #00ff41; font-family: 'Courier New', sans-serif; overflow: hidden; }
+        canvas { display: none; background: #050505; cursor: crosshair; }
+        
         #menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; border: 2px solid #00ff41; padding: 30px; background: rgba(0,0,0,0.9); box-shadow: 0 0 30px #00ff41; width: 320px; z-index: 100; }
-        input, select { width: 100%; padding: 10px; margin: 10px 0; background: #111; border: 1px solid #00ff41; color: #fff; box-sizing: border-box; }
-        button { width: 100%; background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; font-size: 16px; }
-        #leaderboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.7); border: 1px solid #00ff41; padding: 15px; width: 180px; display: none; pointer-events: none; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; background: #111; border: 1px solid #00ff41; color: #fff; box-sizing: border-box; font-family: inherit; }
+        button { width: 100%; background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; font-size: 18px; transition: 0.3s; }
+        button:hover { background: #fff; transform: scale(1.05); }
+
+        #leaderboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.8); border: 1px solid #00ff41; padding: 15px; width: 200px; pointer-events: none; }
         .lb-item { display: flex; justify-content: space-between; font-size: 14px; margin: 5px 0; }
-        #stat { position: absolute; top: 20px; left: 20px; display: none; font-size: 18px; }
+        #stat { position: absolute; top: 20px; left: 20px; font-size: 20px; text-shadow: 2px 2px #000; }
     </style>
 </head>
 <body>
 
-<div id="stat">Bandwidth: <span id="myScore">0</span> KB</div>
+<div id="stat" style="display:none;">📡 Bandwidth: <span id="myScore">0</span> KB</div>
 
 <div id="menu">
-    <h1>SIGNAL HUNT</h1>
-    <input type="text" id="playerName" placeholder="Enter Name..." maxlength="10">
-    <input type="text" id="skinUrl" placeholder="Skin URL (PNG/GIF/JPG)">
-    <select id="playerColor">
-        <option value="#00ff41">Green (Default)</option>
-        <option value="#ff0044">Red</option>
-        <option value="#00ccff">Blue</option>
-        <option value="#ffff00">Yellow</option>
+    <h1 style="letter-spacing: 3px;">SIGNAL HUNT</h1>
+    <input type="text" id="playerName" placeholder="ตั้งชื่อไอดี..." maxlength="12">
+    
+    <label style="font-size: 12px; color: #888;">เลือกอุปกรณ์ของคุณ:</label>
+    <select id="deviceType">
+        <option value="📱">Smartphone</option>
+        <option value="💻">Laptop</option>
+        <option value="🎮">Console</option>
+        <option value="🛰️">Satellite</option>
     </select>
-    <button onclick="join()">START MISSION</button>
+
+    <input type="text" id="skinUrl" placeholder="Image URL (ถ้ามี)">
+    <button onclick="join()">CONNECT</button>
 </div>
 
-<div id="leaderboard">
-    <h3 style="margin:0; font-size:16px; border-bottom:1px solid #00ff41;">TOP 5</h3>
+<div id="leaderboard" style="display:none;">
+    <h3 style="margin:0 0 10px 0; font-size:16px; border-bottom:1px solid #00ff41;">TOP 5 SIGNALS</h3>
     <div id="lb-list"></div>
 </div>
 
@@ -43,25 +49,23 @@
 const socket = io();
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const menu = document.getElementById('menu');
-
 let isRunning = false;
 let players = {};
 let pings = [];
 let mouse = { x: 0, y: 0 };
-let imgCache = {}; // เก็บรูปภาพ Skin เพื่อไม่ให้โหลดซ้ำ
+let imgCache = {};
 
 function join() {
-    const name = document.getElementById('playerName').value;
-    const color = document.getElementById('playerColor').value;
+    const name = document.getElementById('playerName').value || "Guest";
+    const deviceType = document.getElementById('deviceType').value;
     const skinUrl = document.getElementById('skinUrl').value;
     
-    socket.emit('joinGame', { name, color, skinUrl });
+    socket.emit('joinGame', { name, deviceType, skinUrl });
     
-    menu.style.display = 'none';
-    canvas.style.display = 'block';
+    document.getElementById('menu').style.display = 'none';
     document.getElementById('leaderboard').style.display = 'block';
     document.getElementById('stat').style.display = 'block';
+    canvas.style.display = 'block';
     
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -74,23 +78,20 @@ window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.c
 socket.on('updateGameState', (data) => {
     players = data.players;
     pings = data.pings;
-    updateLeaderboard(data.leaderboard);
+    const lb = document.getElementById('lb-list');
+    lb.innerHTML = data.leaderboard.map((p, i) => 
+        `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${p.score}</span></div>`).join('');
 });
 
 socket.on('gameOver', () => {
-    alert("CRITICAL ERROR: คุณถูกกลืนกิน!");
+    alert("SYSTEM CRASHED! คุณถูกอุปกรณ์ที่แรงกว่ากลืนกินคะแนน");
     location.reload();
 });
-
-function updateLeaderboard(list) {
-    document.getElementById('lb-list').innerHTML = list.map((p, i) => 
-        `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${p.score}</span></div>`).join('');
-}
 
 function loop() {
     if(!isRunning) return;
 
-    // ส่งข้อมูล Mouse ไปให้ Server คำนวณทิศทาง
+    // ส่งข้อมูล Mouse ให้ Server
     socket.emit('playerMove', { mx: mouse.x, my: mouse.y, viewW: canvas.width, viewH: canvas.height });
 
     const me = players[socket.id];
@@ -100,54 +101,53 @@ function loop() {
     const camX = canvas.width / 2 - me.x;
     const camY = canvas.height / 2 - me.y;
 
+    // เคลียร์จอ
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
-    ctx.translate(camX, camY); // เลื่อนโลกทั้งใบให้ตัวเราอยู่กลางจอ
+    ctx.translate(camX, camY); // เลื่อนโลกตามตัวเรา
 
-    // วาด Grid พื้นหลัง
+    // วาดพื้นแมพ Grid
     ctx.strokeStyle = '#111';
-    ctx.lineWidth = 2;
     for(let i=0; i<=3000; i+=100) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 3000); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(3000, i); ctx.stroke();
     }
-
-    // วาดขอบแมพ
-    ctx.strokeStyle = '#00ff41';
+    // วาดขอบแมพสีแดง
+    ctx.strokeStyle = '#ff0044';
     ctx.strokeRect(0, 0, 3000, 3000);
 
-    // วาดอาหาร
+    // วาด Ping (อาหาร)
     ctx.fillStyle = '#fff';
     pings.forEach(p => {
         ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
     });
 
-    // วาดผู้เล่นทุกคน
+    // วาดผู้เล่น
     for(let id in players) {
         const p = players[id];
         
         ctx.save();
         if(p.skinUrl) {
-            // ระบบวาด Skin จาก URL
             if(!imgCache[p.skinUrl]) {
                 imgCache[p.skinUrl] = new Image();
                 imgCache[p.skinUrl].src = p.skinUrl;
             }
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-            ctx.clip(); // ตัดรูปเป็นวงกลม
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.clip();
             if(imgCache[p.skinUrl].complete) {
                 ctx.drawImage(imgCache[p.skinUrl], p.x - p.r, p.y - p.r, p.r*2, p.r*2);
             } else {
-                ctx.fillStyle = p.color; ctx.fill(); // ถ้ารูปยังโหลดไม่เสร็จ ให้ใช้สีแทน
+                ctx.fillStyle = '#333'; ctx.fill();
             }
         } else {
-            ctx.fillStyle = p.color;
-            ctx.shadowBlur = id === socket.id ? 20 : 0;
+            // วาด Emoji แทนอุปกรณ์
+            ctx.shadowBlur = 15;
             ctx.shadowColor = p.color;
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+            ctx.font = `${p.r * 1.5}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(p.deviceType, p.x, p.y);
         }
         ctx.restore();
 

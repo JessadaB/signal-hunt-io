@@ -11,10 +11,10 @@ app.use(express.static(__dirname));
 
 let players = {};
 let pings = [];
-const MAP_SIZE = 3000; // ขยายแผนที่ให้กว้างขึ้น
+const MAP_SIZE = 3000; // ขนาดแผนที่กว้างใหญ่
 
-// สร้างอาหาร 150 จุดกระจายทั่วแมพกว้าง
-for(let i=0; i<150; i++) {
+// สร้างอาหาร 200 จุด กระจายทั่วแมพ
+for(let i=0; i<200; i++) {
     pings.push({ id: i, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE });
 }
 
@@ -22,50 +22,57 @@ io.on('connection', (socket) => {
     socket.on('joinGame', (data) => {
         players[socket.id] = {
             id: socket.id,
-            name: data.name || "Unknown",
+            name: data.name || "User",
+            deviceType: data.deviceType || "📱",
+            skinUrl: data.skinUrl || "",
             x: Math.random() * MAP_SIZE,
             y: Math.random() * MAP_SIZE,
-            r: 30,
+            r: 30, // รัศมีเริ่มต้น
             score: 0,
-            color: data.color || "#00ff41",
-            skinUrl: data.skinUrl || "" // รับ URL ของรูปภาพจากหน้าแรก
+            color: `hsl(${Math.random() * 360}, 100%, 50%)`
         };
     });
 
     socket.on('playerMove', (data) => {
-        if (players[socket.id]) {
-            // ระบบเคลื่อนที่ตามทิศทางเม้าส์ในแมพกว้าง
+        const p = players[socket.id];
+        if (p) {
+            // คำนวณทิศทางจากตำแหน่งเม้าส์เทียบกับกึ่งกลางจอ
             const dx = data.mx - (data.viewW / 2);
             const dy = data.my - (data.viewH / 2);
             const angle = Math.atan2(dy, dx);
-            const speed = 4;
+            
+            // ยิ่งตัวใหญ่ ยิ่งช้าลง (Balance)
+            const speed = Math.max(1.5, 5 - (p.r / 100)); 
 
-            players[socket.id].x += Math.cos(angle) * speed;
-            players[socket.id].y += Math.sin(angle) * speed;
+            p.x += Math.cos(angle) * speed;
+            p.y += Math.sin(angle) * speed;
 
-            // กั้นขอบแมพไม่ให้เดินทะลุออกไป
-            players[socket.id].x = Math.max(0, Math.min(MAP_SIZE, players[socket.id].x));
-            players[socket.id].y = Math.max(0, Math.min(MAP_SIZE, players[socket.id].y));
+            // กั้นขอบแมพ
+            p.x = Math.max(0, Math.min(MAP_SIZE, p.x));
+            p.y = Math.max(0, Math.min(MAP_SIZE, p.y));
 
-            // เช็กกินอาหาร
-            pings.forEach((p, index) => {
-                let dist = Math.hypot(players[socket.id].x - p.x, players[socket.id].y - p.y);
-                if (dist < players[socket.id].r) {
-                    players[socket.id].score += 10;
-                    players[socket.id].r += 0.5;
+            // ระบบขยายขนาดตัว: เริ่มที่ 30 และใหญ่ขึ้นตามคะแนน
+            p.r = 30 + Math.sqrt(p.score) * 2;
+
+            // เช็กการกินอาหาร
+            pings.forEach((ping, index) => {
+                let dist = Math.hypot(p.x - ping.x, p.y - ping.y);
+                if (dist < p.r) {
+                    p.score += 5;
                     pings[index] = { id: index, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE };
                 }
             });
 
-            // Death Mechanic: ชนกันแล้วคนเล็กตาย
+            // Death Mechanic: การไล่กินผู้เล่นอื่น
             for (let targetId in players) {
                 if (targetId === socket.id) continue;
                 let target = players[targetId];
-                let dist = Math.hypot(players[socket.id].x - target.x, players[socket.id].y - target.y);
-                if (dist < players[socket.id].r + target.r) {
-                    if (players[socket.id].r > target.r * 1.1) {
-                        players[socket.id].score += target.score / 2;
-                        players[socket.id].r += target.r * 0.2;
+                let dist = Math.hypot(p.x - target.x, p.y - target.y);
+                
+                if (dist < p.r) {
+                    // ต้องใหญ่กว่า 15% ถึงจะกินได้
+                    if (p.r > target.r * 1.15) {
+                        p.score += target.score + 50;
                         io.to(targetId).emit('gameOver');
                         delete players[targetId];
                     }
@@ -86,4 +93,4 @@ setInterval(() => {
 }, 15);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Game Server Running on Port ${PORT}`));
