@@ -2,43 +2,37 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Signal Hunt .io - Pro</title>
+    <title>Signal Hunt .io - Ultimate</title>
     <style>
-        body { margin: 0; background: #000; color: #00ff41; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
-        #gameCanvas { display: none; background: #050505; cursor: none; }
-        
-        /* Menu Style */
-        #menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; border: 2px solid #00ff41; padding: 40px; background: rgba(0,0,0,0.9); box-shadow: 0 0 30px #00ff41; width: 300px; }
+        body { margin: 0; background: #000; color: #00ff41; font-family: sans-serif; overflow: hidden; }
+        canvas { display: none; background: #050505; cursor: none; }
+        #menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; border: 2px solid #00ff41; padding: 30px; background: rgba(0,0,0,0.9); box-shadow: 0 0 30px #00ff41; width: 320px; z-index: 100; }
         input, select { width: 100%; padding: 10px; margin: 10px 0; background: #111; border: 1px solid #00ff41; color: #fff; box-sizing: border-box; }
-        button { width: 100%; background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; font-size: 18px; }
-        
-        /* Leaderboard Style */
-        #leaderboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.7); border: 1px solid #00ff41; padding: 15px; width: 200px; display: none; pointer-events: none; }
-        #leaderboard h3 { margin: 0 0 10px 0; font-size: 16px; border-bottom: 1px solid #00ff41; }
+        button { width: 100%; background: #00ff41; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; font-size: 16px; }
+        #leaderboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.7); border: 1px solid #00ff41; padding: 15px; width: 180px; display: none; pointer-events: none; }
         .lb-item { display: flex; justify-content: space-between; font-size: 14px; margin: 5px 0; }
-        
-        #stat { position: absolute; top: 20px; left: 20px; display: none; }
+        #stat { position: absolute; top: 20px; left: 20px; display: none; font-size: 18px; }
     </style>
 </head>
 <body>
 
+<div id="stat">Bandwidth: <span id="myScore">0</span> KB</div>
+
 <div id="menu">
     <h1>SIGNAL HUNT</h1>
     <input type="text" id="playerName" placeholder="Enter Name..." maxlength="10">
-    <label>Choose Skin Color:</label>
+    <input type="text" id="skinUrl" placeholder="Skin URL (PNG/GIF/JPG)">
     <select id="playerColor">
-        <option value="#00ff41">Cyber Green</option>
-        <option value="#ff0044">Glitch Red</option>
-        <option value="#00ccff">Data Blue</option>
-        <option value="#ffff00">Warning Yellow</option>
+        <option value="#00ff41">Green (Default)</option>
+        <option value="#ff0044">Red</option>
+        <option value="#00ccff">Blue</option>
+        <option value="#ffff00">Yellow</option>
     </select>
     <button onclick="join()">START MISSION</button>
 </div>
 
-<div id="stat">Bandwidth: <span id="myScore">0</span> KB</div>
-
 <div id="leaderboard">
-    <h3>TOP PLAYERS</h3>
+    <h3 style="margin:0; font-size:16px; border-bottom:1px solid #00ff41;">TOP 5</h3>
     <div id="lb-list"></div>
 </div>
 
@@ -54,13 +48,15 @@ const menu = document.getElementById('menu');
 let isRunning = false;
 let players = {};
 let pings = [];
-let myPos = { x: 0, y: 0 };
+let mouse = { x: 0, y: 0 };
+let imgCache = {}; // เก็บรูปภาพ Skin เพื่อไม่ให้โหลดซ้ำ
 
 function join() {
     const name = document.getElementById('playerName').value;
     const color = document.getElementById('playerColor').value;
+    const skinUrl = document.getElementById('skinUrl').value;
     
-    socket.emit('joinGame', { name, color });
+    socket.emit('joinGame', { name, color, skinUrl });
     
     menu.style.display = 'none';
     canvas.style.display = 'block';
@@ -69,77 +65,109 @@ function join() {
     
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    myPos = { x: canvas.width/2, y: canvas.height/2 };
     isRunning = true;
     loop();
 }
 
-window.addEventListener('mousemove', (e) => {
-    if(isRunning) {
-        myPos.x = e.clientX;
-        myPos.y = e.clientY;
-        socket.emit('playerMove', myPos);
-    }
-});
+window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
 
 socket.on('updateGameState', (data) => {
     players = data.players;
     pings = data.pings;
     updateLeaderboard(data.leaderboard);
-    
-    if(players[socket.id]) {
-        document.getElementById('myScore').innerText = Math.floor(players[socket.id].score);
-    }
 });
 
 socket.on('gameOver', () => {
-    isRunning = false;
-    alert("SYSTEM TERMINATED: คุณถูกผู้เล่นที่ใหญ่กว่ากลืนกิน!");
+    alert("CRITICAL ERROR: คุณถูกกลืนกิน!");
     location.reload();
 });
 
 function updateLeaderboard(list) {
-    const container = document.getElementById('lb-list');
-    container.innerHTML = list.map((p, i) => 
-        `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${p.score}</span></div>`
-    ).join('');
+    document.getElementById('lb-list').innerHTML = list.map((p, i) => 
+        `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${p.score}</span></div>`).join('');
 }
 
 function loop() {
     if(!isRunning) return;
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    // ส่งข้อมูล Mouse ไปให้ Server คำนวณทิศทาง
+    socket.emit('playerMove', { mx: mouse.x, my: mouse.y, viewW: canvas.width, viewH: canvas.height });
+
+    const me = players[socket.id];
+    if(!me) { requestAnimationFrame(loop); return; }
+
+    // --- CAMERA SYSTEM ---
+    const camX = canvas.width / 2 - me.x;
+    const camY = canvas.height / 2 - me.y;
+
+    ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(camX, camY); // เลื่อนโลกทั้งใบให้ตัวเราอยู่กลางจอ
+
+    // วาด Grid พื้นหลัง
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 2;
+    for(let i=0; i<=3000; i+=100) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 3000); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(3000, i); ctx.stroke();
+    }
+
+    // วาดขอบแมพ
+    ctx.strokeStyle = '#00ff41';
+    ctx.strokeRect(0, 0, 3000, 3000);
 
     // วาดอาหาร
     ctx.fillStyle = '#fff';
     pings.forEach(p => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
     });
 
-    // วาดผู้เล่น
+    // วาดผู้เล่นทุกคน
     for(let id in players) {
-        let p = players[id];
-        ctx.fillStyle = p.color;
-        ctx.shadowBlur = id === socket.id ? 20 : 5;
-        ctx.shadowColor = p.color;
+        const p = players[id];
         
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        ctx.save();
+        if(p.skinUrl) {
+            // ระบบวาด Skin จาก URL
+            if(!imgCache[p.skinUrl]) {
+                imgCache[p.skinUrl] = new Image();
+                imgCache[p.skinUrl].src = p.skinUrl;
+            }
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+            ctx.clip(); // ตัดรูปเป็นวงกลม
+            if(imgCache[p.skinUrl].complete) {
+                ctx.drawImage(imgCache[p.skinUrl], p.x - p.r, p.y - p.r, p.r*2, p.r*2);
+            } else {
+                ctx.fillStyle = p.color; ctx.fill(); // ถ้ารูปยังโหลดไม่เสร็จ ให้ใช้สีแทน
+            }
+        } else {
+            ctx.fillStyle = p.color;
+            ctx.shadowBlur = id === socket.id ? 20 : 0;
+            ctx.shadowColor = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
 
         // วาดชื่อ
         ctx.fillStyle = '#fff';
-        ctx.textAlign = 'center';
         ctx.font = 'bold 14px Arial';
-        ctx.fillText(p.name, p.x, p.y - (p.r + 10));
+        ctx.textAlign = 'center';
+        ctx.fillText(p.name, p.x, p.y - p.r - 10);
+        
+        if(id === socket.id) document.getElementById('myScore').innerText = Math.floor(p.score);
     }
 
+    ctx.restore();
     requestAnimationFrame(loop);
 }
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
 </script>
 </body>
 </html>

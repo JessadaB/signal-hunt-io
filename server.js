@@ -11,54 +11,62 @@ app.use(express.static(__dirname));
 
 let players = {};
 let pings = [];
+const MAP_SIZE = 3000; // ขยายแผนที่ให้กว้างขึ้น
 
-// สร้างอาหาร 50 จุด
-for(let i=0; i<50; i++) {
-    pings.push({ id: i, x: Math.random() * 2000, y: Math.random() * 2000 });
+// สร้างอาหาร 150 จุดกระจายทั่วแมพกว้าง
+for(let i=0; i<150; i++) {
+    pings.push({ id: i, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE });
 }
 
 io.on('connection', (socket) => {
-    // รับข้อมูลเริ่มต้น (ชื่อ และ สี)
     socket.on('joinGame', (data) => {
         players[socket.id] = {
             id: socket.id,
             name: data.name || "Unknown",
-            x: Math.random() * 1000,
-            y: Math.random() * 1000,
-            r: 20,
+            x: Math.random() * MAP_SIZE,
+            y: Math.random() * MAP_SIZE,
+            r: 30,
             score: 0,
-            color: data.color || "#00ff41"
+            color: data.color || "#00ff41",
+            skinUrl: data.skinUrl || "" // รับ URL ของรูปภาพจากหน้าแรก
         };
     });
 
     socket.on('playerMove', (data) => {
         if (players[socket.id]) {
-            players[socket.id].x = data.x;
-            players[socket.id].y = data.y;
+            // ระบบเคลื่อนที่ตามทิศทางเม้าส์ในแมพกว้าง
+            const dx = data.mx - (data.viewW / 2);
+            const dy = data.my - (data.viewH / 2);
+            const angle = Math.atan2(dy, dx);
+            const speed = 4;
 
-            // 1. เช็กกินอาหาร
+            players[socket.id].x += Math.cos(angle) * speed;
+            players[socket.id].y += Math.sin(angle) * speed;
+
+            // กั้นขอบแมพไม่ให้เดินทะลุออกไป
+            players[socket.id].x = Math.max(0, Math.min(MAP_SIZE, players[socket.id].x));
+            players[socket.id].y = Math.max(0, Math.min(MAP_SIZE, players[socket.id].y));
+
+            // เช็กกินอาหาร
             pings.forEach((p, index) => {
                 let dist = Math.hypot(players[socket.id].x - p.x, players[socket.id].y - p.y);
                 if (dist < players[socket.id].r) {
                     players[socket.id].score += 10;
                     players[socket.id].r += 0.5;
-                    pings[index] = { id: index, x: Math.random() * 2000, y: Math.random() * 2000 };
+                    pings[index] = { id: index, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE };
                 }
             });
 
-            // 2. Death Mechanic: เช็กการชนกันเอง
+            // Death Mechanic: ชนกันแล้วคนเล็กตาย
             for (let targetId in players) {
                 if (targetId === socket.id) continue;
                 let target = players[targetId];
                 let dist = Math.hypot(players[socket.id].x - target.x, players[socket.id].y - target.y);
-
-                // ถ้าชนกัน
                 if (dist < players[socket.id].r + target.r) {
-                    // ใครใหญ่กว่าคนนั้นรอด
-                    if (players[socket.id].r > target.r * 1.1) { // ใหญ่กว่า 10% ถึงจะกินได้
+                    if (players[socket.id].r > target.r * 1.1) {
                         players[socket.id].score += target.score / 2;
                         players[socket.id].r += target.r * 0.2;
-                        io.to(targetId).emit('gameOver'); // ส่งสัญญาณบอกผู้ตาย
+                        io.to(targetId).emit('gameOver');
                         delete players[targetId];
                     }
                 }
@@ -69,16 +77,13 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => { delete players[socket.id]; });
 });
 
-// ส่งข้อมูล Game State และ Leaderboard
 setInterval(() => {
-    // จัดอันดับ Top 5
     let leaderboard = Object.values(players)
         .sort((a, b) => b.score - a.score)
         .slice(0, 5)
         .map(p => ({ name: p.name, score: Math.floor(p.score) }));
-
     io.emit('updateGameState', { players, pings, leaderboard });
 }, 15);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
